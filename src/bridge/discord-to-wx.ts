@@ -74,12 +74,9 @@ export class DiscordToWx {
       }
 
       // 使用 HubClient 将消息发送到微信
-      const hubClient = new HubClient(installation);
+      const hubClient = new HubClient(installation.hubUrl, installation.appToken);
 
-      await hubClient.sendText({
-        receiverId: targetWxUserId,
-        content: cleanContent,
-      });
+      await hubClient.sendText(targetWxUserId, cleanContent);
 
       console.log(
         `[DiscordToWx] 已转发消息至微信: wxUser=${targetWxUserId}, content=${cleanContent.substring(0, 50)}${cleanContent.length > 50 ? '...' : ''}`,

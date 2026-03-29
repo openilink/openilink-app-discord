@@ -65,7 +65,7 @@ async function main(): Promise<void> {
         await handleWebhook(req, res, store, {
           // 命令事件 - 路由到 tool handler
           onCommand: async (event, installation) => {
-            const hubClient = new HubClient(installation);
+            const hubClient = new HubClient(installation.hubUrl, installation.appToken);
             return router.handleCommand(event, installation, hubClient);
           },
           // 非命令事件（消息桥接等）
@@ -74,19 +74,21 @@ async function main(): Promise<void> {
           },
           // 异步推送回调 - 命令超时后通过 Bot API 推送结果
           onAsyncPush: async (result, event, installation) => {
-            const hubClient = new HubClient(installation);
+            const hubClient = new HubClient(installation.hubUrl, installation.appToken);
             const data = event.event?.data ?? {};
-            const senderId = ((data as Record<string, any>).user_id ?? (data as Record<string, any>).from ?? "") as string;
-            if (!senderId) return;
+            const to = ((data as Record<string, any>).group?.id ?? (data as Record<string, any>).sender?.id ?? (data as Record<string, any>).user_id ?? (data as Record<string, any>).from ?? "") as string;
+            if (!to) return;
+            const traceId = event.trace_id;
             try {
-              if (result.type === "image" && (result.url || result.base64)) {
-                await hubClient.sendImage({
-                  receiverId: senderId,
-                  imageUrl: result.url || result.base64!,
+              if (typeof result === "string") {
+                await hubClient.sendText(to, result, traceId);
+              } else {
+                await hubClient.sendMessage(to, result.type ?? "text", result.reply, {
+                  url: result.url,
+                  base64: result.base64,
+                  filename: result.name,
+                  traceId,
                 });
-              }
-              if (result.reply) {
-                await hubClient.sendText({ receiverId: senderId, content: result.reply });
               }
             } catch (err) {
               console.error("[Main] 异步推送命令结果失败:", err);

@@ -1,34 +1,15 @@
+import type { ToolDefinition } from "./types.js";
+
 /**
- * Hub Bot API 客户端
- *
- * 用于通过 Hub 向微信发送消息（文本、图片、文件等）
+ * Hub Bot API 客户端 - 用于通过 Hub 向用户发送消息、同步工具定义
  */
-
-import type { Installation, ToolDefinition } from "./types.js";
-
-/** 发送消息的通用选项 */
-interface SendOptions {
-  /** 接收者 ID（微信用户/群） */
-  receiverId: string;
-  /** 接收者类型，默认 "user" */
-  receiverType?: "user" | "group";
-}
-
-/** Hub API 通用响应 */
-interface HubApiResponse {
-  ok: boolean;
-  error?: string;
-  data?: Record<string, unknown>;
-}
-
-/** 默认请求超时时间: 30 秒 */
-const DEFAULT_TIMEOUT = 30_000;
-
 export class HubClient {
-  private installation: Installation;
+  private hubUrl: string;
+  private appToken: string;
 
-  constructor(installation: Installation) {
-    this.installation = installation;
+  constructor(hubUrl: string, appToken: string) {
+    this.hubUrl = hubUrl;
+    this.appToken = appToken;
   }
 
   /**
@@ -36,115 +17,86 @@ export class HubClient {
    * PUT {hubUrl}/bot/v1/app/tools
    */
   async syncTools(tools: ToolDefinition[]): Promise<void> {
-    const url = new URL("/bot/v1/app/tools", this.installation.hubUrl);
-
-    const response = await fetch(url.toString(), {
+    const url = `${this.hubUrl}/bot/v1/app/tools`;
+    const res = await fetch(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.installation.appToken}`,
+        Authorization: `Bearer ${this.appToken}`,
       },
       body: JSON.stringify({ tools }),
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
+      signal: AbortSignal.timeout(30_000),
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[HubClient] 同步工具定义失败:", response.status, errText);
-      throw new Error(`同步工具定义失败: ${response.status} ${errText}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(
+        `[hub-client] 同步工具定义失败: ${res.status} ${res.statusText} - ${errText}`,
+      );
     }
-    console.log(`[HubClient] 工具定义同步成功, 共 ${tools.length} 个工具`);
+    console.log(`[hub-client] 工具定义同步成功, 共 ${tools.length} 个工具`);
+  }
+
+  /**
+   * 发送消息（通用方法）
+   * POST {hubUrl}/bot/v1/message/send
+   */
+  async sendMessage(
+    to: string,
+    type: string,
+    content: string,
+    options?: { url?: string; base64?: string; filename?: string; traceId?: string },
+  ): Promise<void> {
+    const url = `${this.hubUrl}/bot/v1/message/send`;
+
+    const body: Record<string, string> = { to, type, content };
+    if (options?.url) body.url = options.url;
+    if (options?.base64) body.base64 = options.base64;
+    if (options?.filename) body.filename = options.filename;
+    if (options?.traceId) body.trace_id = options.traceId;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.appToken}`,
+        ...(options?.traceId ? { "X-Trace-Id": options.traceId } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(
+        `[hub-client] 发送消息失败: ${res.status} ${res.statusText} - ${errText}`,
+      );
+    }
   }
 
   /**
    * 发送文本消息
    */
-  async sendText(
-    opts: SendOptions & { content: string },
-  ): Promise<HubApiResponse> {
-    return this.sendMessage({
-      receiverId: opts.receiverId,
-      receiverType: opts.receiverType,
-      msgType: "text",
-      content: { text: opts.content },
-    });
+  async sendText(to: string, text: string, traceId?: string): Promise<void> {
+    await this.sendMessage(to, "text", text, { traceId });
   }
 
   /**
    * 发送图片消息
-   * @param imageUrl - 图片 URL 或 base64 数据
    */
-  async sendImage(
-    opts: SendOptions & { imageUrl: string },
-  ): Promise<HubApiResponse> {
-    return this.sendMessage({
-      receiverId: opts.receiverId,
-      receiverType: opts.receiverType,
-      msgType: "image",
-      content: { image_url: opts.imageUrl },
-    });
+  async sendImage(to: string, url: string, traceId?: string): Promise<void> {
+    await this.sendMessage(to, "image", "", { url, traceId });
   }
 
   /**
    * 发送文件消息
    */
   async sendFile(
-    opts: SendOptions & { fileUrl: string; fileName: string },
-  ): Promise<HubApiResponse> {
-    return this.sendMessage({
-      receiverId: opts.receiverId,
-      receiverType: opts.receiverType,
-      msgType: "file",
-      content: { file_url: opts.fileUrl, file_name: opts.fileName },
-    });
-  }
-
-  /**
-   * 发送通用消息 — 底层方法
-   */
-  async sendMessage(payload: {
-    receiverId: string;
-    receiverType?: "user" | "group";
-    msgType: string;
-    content: Record<string, unknown>;
-  }): Promise<HubApiResponse> {
-    const url = new URL(
-      `/api/bot/${this.installation.botId}/message/send`,
-      this.installation.hubUrl,
-    );
-
-    const body = {
-      receiver_id: payload.receiverId,
-      receiver_type: payload.receiverType ?? "user",
-      msg_type: payload.msgType,
-      content: payload.content,
-    };
-
-    try {
-      const response = await fetch(url.toString(), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.installation.appToken}`,
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
-      });
-
-      const data = (await response.json()) as HubApiResponse;
-
-      if (!response.ok) {
-        console.error(
-          "[HubClient] 发送消息失败:",
-          response.status,
-          JSON.stringify(data),
-        );
-      }
-
-      return data;
-    } catch (err) {
-      console.error("[HubClient] 请求异常:", err);
-      return { ok: false, error: String(err) };
-    }
+    to: string,
+    fileUrl: string,
+    fileName: string,
+    traceId?: string,
+  ): Promise<void> {
+    await this.sendMessage(to, "file", "", { url: fileUrl, filename: fileName, traceId });
   }
 }
