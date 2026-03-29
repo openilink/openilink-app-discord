@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  discord-bridge:
+    build: .
+    container_name: openilink-discord-bridge
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      - HUB_URL=${HUB_URL}
+      - BASE_URL=${BASE_URL}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+      - DB_PATH=/data/discord.db
+      - PORT=8083
+    volumes:
+      - discord-data:/data
+
+volumes:
+  discord-data:
