@@ -141,8 +141,10 @@ export async function handleOAuthRedirect(
       installation_id: string;
     };
 
-    // 保存安装记录
-    const installation = store.saveInstallation({
+    // 保存安装记录（使用 Hub 返回的 installation_id）
+    const installationId = tokenData.installation_id;
+    store.saveInstallation({
+      id: installationId,
       hubUrl: hub,
       appId,
       botId: tokenData.bot_id,
@@ -150,7 +152,7 @@ export async function handleOAuthRedirect(
       webhookSecret: tokenData.webhook_secret,
     });
 
-    console.log("[oauth] 安装成功, installation_id:", installation.id);
+    console.log("[oauth] 安装成功, installation_id:", installationId);
 
     // OAuth 成功后，同步工具定义到 Hub
     if (toolDefinitions && toolDefinitions.length > 0) {
@@ -173,7 +175,7 @@ export async function handleOAuthRedirect(
         JSON.stringify({
           ok: true,
           message: "安装成功",
-          installation_id: installation.id,
+          installation_id: installationId,
         }),
       );
     }

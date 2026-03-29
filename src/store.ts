@@ -24,7 +24,7 @@ export class Store {
   private init(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS installations (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        id               TEXT PRIMARY KEY,
         hub_url          TEXT NOT NULL,
         app_id           TEXT NOT NULL,
         bot_id           TEXT NOT NULL,
@@ -35,7 +35,7 @@ export class Store {
 
       CREATE TABLE IF NOT EXISTS message_links (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-        installation_id     INTEGER NOT NULL,
+        installation_id     TEXT NOT NULL,
         discord_message_id  TEXT NOT NULL,
         discord_channel_id  TEXT NOT NULL,
         wx_user_id          TEXT NOT NULL,
@@ -55,18 +55,23 @@ export class Store {
   //  Installation CRUD
   // ========================
 
-  /** 保存安装记录，返回插入后的 id */
-  saveInstallation(inst: Omit<Installation, "id" | "createdAt">): Installation {
+  /** 保存安装记录（upsert，使用 Hub 返回的 installation_id） */
+  saveInstallation(inst: Omit<Installation, "createdAt">): void {
     const stmt = this.db.prepare(`
-      INSERT INTO installations (hub_url, app_id, bot_id, app_token, webhook_secret)
-      VALUES (@hubUrl, @appId, @botId, @appToken, @webhookSecret)
+      INSERT INTO installations (id, hub_url, app_id, bot_id, app_token, webhook_secret)
+      VALUES (@id, @hubUrl, @appId, @botId, @appToken, @webhookSecret)
+      ON CONFLICT(id) DO UPDATE SET
+        hub_url = excluded.hub_url,
+        app_id = excluded.app_id,
+        bot_id = excluded.bot_id,
+        app_token = excluded.app_token,
+        webhook_secret = excluded.webhook_secret
     `);
-    const result = stmt.run(inst);
-    return this.getInstallation(String(result.lastInsertRowid))!;
+    stmt.run(inst);
   }
 
   /** 根据 id 获取安装记录 */
-  getInstallation(id: string | number): Installation | undefined {
+  getInstallation(id: string): Installation | undefined {
     const row = this.db.prepare(`
       SELECT id, hub_url, app_id, bot_id, app_token, webhook_secret, created_at
       FROM installations WHERE id = ?
@@ -111,7 +116,7 @@ export class Store {
   }
 
   /** 获取某微信用户最近一条关联记录 */
-  getLatestLinkByWxUser(wxUserId: string, installationId: number): MessageLink | undefined {
+  getLatestLinkByWxUser(wxUserId: string, installationId: string): MessageLink | undefined {
     const row = this.db.prepare(`
       SELECT id, installation_id, discord_message_id, discord_channel_id, wx_user_id, wx_user_name, created_at
       FROM message_links
