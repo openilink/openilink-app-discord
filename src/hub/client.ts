@@ -4,7 +4,7 @@
  * 用于通过 Hub 向微信发送消息（文本、图片、文件等）
  */
 
-import type { Installation } from "./types.js";
+import type { Installation, ToolDefinition } from "./types.js";
 
 /** 发送消息的通用选项 */
 interface SendOptions {
@@ -29,6 +29,31 @@ export class HubClient {
 
   constructor(installation: Installation) {
     this.installation = installation;
+  }
+
+  /**
+   * 将工具定义同步注册到 Hub
+   * PUT {hubUrl}/bot/v1/app/tools
+   */
+  async syncTools(tools: ToolDefinition[]): Promise<void> {
+    const url = new URL("/bot/v1/app/tools", this.installation.hubUrl);
+
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.installation.appToken}`,
+      },
+      body: JSON.stringify({ tools }),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("[HubClient] 同步工具定义失败:", response.status, errText);
+      throw new Error(`同步工具定义失败: ${response.status} ${errText}`);
+    }
+    console.log(`[HubClient] 工具定义同步成功, 共 ${tools.length} 个工具`);
   }
 
   /**

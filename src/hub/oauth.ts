@@ -14,6 +14,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { generatePKCE } from "../utils/crypto.js";
 import type { Store } from "../store.js";
 import type { Config } from "../config.js";
+import type { ToolDefinition } from "./types.js";
+import { HubClient } from "./client.js";
 
 /** PKCE 缓存: state → { verifier, hubUrl, appId } */
 const pkceCache = new Map<
@@ -75,6 +77,7 @@ export async function handleOAuthRedirect(
   res: ServerResponse,
   config: Config,
   store: Store,
+  toolDefinitions?: ToolDefinition[],
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const code = url.searchParams.get("code");
@@ -134,6 +137,17 @@ export async function handleOAuthRedirect(
     });
 
     console.log("[OAuth] 安装成功, installation_id:", installation.id);
+
+    // OAuth 成功后，同步工具定义到 Hub
+    if (toolDefinitions && toolDefinitions.length > 0) {
+      try {
+        const hubClient = new HubClient(installation);
+        await hubClient.syncTools(toolDefinitions);
+        console.log("[OAuth] 工具定义同步完成");
+      } catch (err) {
+        console.error("[OAuth] 工具定义同步失败:", err);
+      }
+    }
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(

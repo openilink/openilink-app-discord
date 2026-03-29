@@ -17,7 +17,7 @@ import { HubClient } from "./hub/client.js";
 import { handleOAuthSetup, handleOAuthRedirect } from "./hub/oauth.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { getManifest } from "./hub/manifest.js";
-import type { HubEvent } from "./hub/types.js";
+
 
 async function main(): Promise<void> {
   // 1. 加载配置
@@ -54,50 +54,45 @@ async function main(): Promise<void> {
     }
   });
 
-  // Hub 事件回调（微信 → Discord 方向 + 命令路由）
-  async function onHubEvent(event: HubEvent): Promise<void> {
-    console.log(
-      "[Event] 收到事件:",
-      event.event?.type ?? event.type,
-      "trace_id:",
-      event.trace_id,
-    );
-
-    const installation = store.getInstallation(event.installation_id);
-    if (!installation) {
-      console.error(`[Event] 未找到 installation: ${event.installation_id}`);
-      return;
-    }
-
-    const hubClient = new HubClient(installation);
-
-    // 命令类型事件走路由
-    if (event.event?.type === "command") {
-      const result = await router.handleCommand(event, installation, hubClient);
-      if (result) {
-        // 将结果通过 Hub 回复给微信用户
-        const data = event.event?.data ?? {};
-        const senderId = (data as Record<string, any>).user_id ?? (data as Record<string, any>).from ?? "";
-        if (senderId) {
-          await hubClient.sendText({ receiverId: senderId as string, content: result });
-        }
-      }
-      return;
-    }
-
-    // 其他消息事件走桥接转发
-    await wxToDiscord.handleWxEvent(event, installation);
-  }
-
   // 9. 创建 HTTP 服务
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
     const pathname = url.pathname;
 
     try {
-      // Webhook 端点
+      // Webhook 端点 - command 事件支持同步/异步响应
       if (pathname === "/hub/webhook" && req.method === "POST") {
-        await handleWebhook(req, res, store, onHubEvent);
+        await handleWebhook(req, res, store, {
+          // 命令事件 - 路由到 tool handler
+          onCommand: async (event, installation) => {
+            const hubClient = new HubClient(installation);
+            return router.handleCommand(event, installation, hubClient);
+          },
+          // 非命令事件（消息桥接等）
+          onEvent: async (event, installation) => {
+            await wxToDiscord.handleWxEvent(event, installation);
+          },
+          // 异步推送回调 - 命令超时后通过 Bot API 推送结果
+          onAsyncPush: async (result, event, installation) => {
+            const hubClient = new HubClient(installation);
+            const data = event.event?.data ?? {};
+            const senderId = ((data as Record<string, any>).user_id ?? (data as Record<string, any>).from ?? "") as string;
+            if (!senderId) return;
+            try {
+              if (result.type === "image" && (result.url || result.base64)) {
+                await hubClient.sendImage({
+                  receiverId: senderId,
+                  imageUrl: result.url || result.base64!,
+                });
+              }
+              if (result.reply) {
+                await hubClient.sendText({ receiverId: senderId, content: result.reply });
+              }
+            } catch (err) {
+              console.error("[Main] 异步推送命令结果失败:", err);
+            }
+          },
+        });
         return;
       }
 
@@ -108,7 +103,7 @@ async function main(): Promise<void> {
       }
 
       if (pathname === "/oauth/redirect" && req.method === "GET") {
-        await handleOAuthRedirect(req, res, config, store);
+        await handleOAuthRedirect(req, res, config, store, toolDefinitions);
         return;
       }
 

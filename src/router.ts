@@ -3,7 +3,7 @@
  * 从 Hub 事件中提取命令名称，查找对应的 ToolHandler 并执行
  */
 
-import type { ToolHandler, ToolContext, HubEvent, Installation } from "./hub/types.js";
+import type { ToolHandler, ToolContext, HubEvent, Installation, ToolResult } from "./hub/types.js";
 import { HubClient } from "./hub/client.js";
 
 export class Router {
@@ -20,13 +20,13 @@ export class Router {
    * @param event - Hub 推送的事件
    * @param installation - 应用安装信息
    * @param hubClient - Hub API 客户端（用于回复消息）
-   * @returns 工具执行结果文本，未找到命令时返回 null
+   * @returns 工具执行结果（字符串或 ToolResult），未找到命令时返回 null
    */
   async handleCommand(
     event: HubEvent,
     installation: Installation,
     hubClient: HubClient,
-  ): Promise<string | null> {
+  ): Promise<string | ToolResult | null> {
     const data = event.event?.data;
     if (!data) {
       console.warn("[Router] 事件缺少 data 字段");
