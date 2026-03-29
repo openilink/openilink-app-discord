@@ -40,7 +40,7 @@ export class DiscordClient {
     return new Promise<void>((resolve, reject) => {
       // 监听就绪事件
       this.bot.once(Events.ClientReady, (readyClient) => {
-        console.log(`[Discord] Bot 已就绪，登录为 ${readyClient.user.tag}`);
+        console.log(`[Discord] Bot 已就绪，登录为 ${readyClient.user.username}`);
         resolve();
       });
 
@@ -265,7 +265,7 @@ export class DiscordClient {
   async getUserInfo(userId: string): Promise<any> {
     try {
       const user = await this.bot.users.fetch(userId);
-      console.log(`[Discord] 已获取用户信息: ${user.tag} (${userId})`);
+      console.log(`[Discord] 已获取用户信息: ${user.username} (${userId})`);
       return user;
     } catch (err) {
       console.error(`[Discord] 获取用户信息失败 (userId=${userId}):`, err);

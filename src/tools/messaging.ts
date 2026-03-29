@@ -208,7 +208,7 @@ function createHandlers(client: Client): Map<string, ToolHandler> {
       const sorted = [...messages.values()].reverse();
       const lines = sorted.map((m) => {
         const time = m.createdAt.toLocaleString("zh-CN");
-        return `[${time}] ${m.author.tag}: ${m.content || "(非文本内容)"}`;
+        return `[${time}] ${m.author.username}: ${m.content || "(非文本内容)"}`;
       });
 
       return `📜 频道 #${channel.name} 最近 ${sorted.length} 条消息:\n${lines.join("\n")}`;
