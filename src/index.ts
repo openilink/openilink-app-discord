@@ -14,7 +14,7 @@ import { Router } from "./router.js";
 import { WxToDiscord } from "./bridge/wx-to-discord.js";
 import { DiscordToWx } from "./bridge/discord-to-wx.js";
 import { HubClient } from "./hub/client.js";
-import { handleOAuthSetup, handleOAuthRedirect } from "./hub/oauth.js";
+import { handleOAuthSetup, handleOAuthRedirect, handleOAuthNotify } from "./hub/oauth.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { getManifest } from "./hub/manifest.js";
 
@@ -104,9 +104,17 @@ async function main(): Promise<void> {
         return;
       }
 
-      if (pathname === "/oauth/redirect" && req.method === "GET") {
-        await handleOAuthRedirect(req, res, config, store, toolDefinitions);
-        return;
+      // GET /oauth/redirect - OAuth 回调（模式 1）
+      // POST /oauth/redirect - Hub 直接安装通知（模式 2）
+      if (pathname === "/oauth/redirect") {
+        if (req.method === "POST") {
+          await handleOAuthNotify(req, res, config, store, toolDefinitions);
+          return;
+        }
+        if (req.method === "GET") {
+          await handleOAuthRedirect(req, res, config, store, toolDefinitions);
+          return;
+        }
       }
 
       // Manifest 端点
