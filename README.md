@@ -5,25 +5,49 @@
 [![Discord.js](https://img.shields.io/badge/discord.js-v14-5865F2)](https://discord.js.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-OpeniLink Hub App -- 微信与 Discord 双向消息桥接 + 19 个 AI Tools。
+**OpeniLink Hub App** -- 微信 ↔ Discord 双向消息桥接 + 19 个 AI Tools，覆盖消息、频道、成员、Embed、文件、管理六大模块。
 
-## 简介
+> 本项目是 [OpeniLink Hub](https://github.com/openilink/openilink-hub) 的官方 App。Hub 是微信 Bot 的一站式管理平台，扫码绑定微信号即可使用。
 
-`@openilink/app-discord` 是一个 OpeniLink Hub 应用，提供以下核心能力：
+---
 
-- **IM 桥接**：微信消息自动转发到 Discord 频道（Embed 格式），Discord 回复自动转发回微信
-- **自然语言操作**：通过 19 个 AI Tools，让 AI 助手用自然语言操控 Discord（发消息、管理频道、查成员等）
-- **Gateway 连接**：通过 Discord Gateway WebSocket 接收消息，无需公网暴露 Bot
+## 功能亮点
 
-## 功能特性
+- **微信 ↔ Discord 双向桥接**：微信消息自动转发到 Discord 频道（Embed 格式），Discord 回复自动转发回微信
+- **自然语言操作 Discord**：在微信中说"在 Discord 发个消息说服务器维护完成"，Hub AI 自动调用 Discord API 完成操作
+- **19 个 AI Tools，覆盖 6 大模块**：消息、频道、成员、Embed 富文本、文件、管理
+- **Gateway 无需公网**：通过 Discord Gateway WebSocket 接收消息，只需出站网络即可，无需为 Bot 配置公网入口
+- **安全验证**：Webhook 签名验证 + OAuth PKCE 安装流程
+- **SQLite 持久化**：消息映射和安装记录存储在本地数据库，消息内容不落盘
 
-### IM 桥接
-- 微信文本/图片/语音/视频/文件消息 -> Discord Embed
-- Discord 回复消息 -> 微信（通过消息引用自动匹配目标用户）
-- 消息映射关系持久化（SQLite）
+---
 
-### 19 个 AI Tools
-通过 OpeniLink Hub 的工具协议，AI 助手可以用自然语言执行 Discord 操作：
+## 使用方式
+
+安装到 Bot 后，支持三种方式调用：
+
+### 自然语言（推荐）
+
+直接用微信跟 Bot 对话，Hub AI 会自动识别意图并调用对应功能：
+
+- "在 Discord 发个消息说服务器维护完成"
+- "查看 Discord 频道成员"
+- "创建一个叫 dev-chat 的新频道"
+- "踢掉某个违规用户"
+
+### 命令调用
+
+也可以使用 `/命令名 参数` 的格式直接调用：
+
+- `/send_discord_message --channel_id 123 --text Hello`
+
+### AI 自动调用
+
+Hub AI 在多轮对话中会自动判断是否需要调用本 App 的功能，无需手动触发。
+
+---
+
+## 支持的 19 个 Tools
 
 | 模块 | 工具 | 说明 |
 |------|------|------|
@@ -47,10 +71,128 @@ OpeniLink Hub App -- 微信与 Discord 双向消息桥接 + 19 个 AI Tools。
 | Moderation | `kick_member` | 踢出成员 |
 | | `ban_member` | 封禁成员 |
 
-### Gateway 无需公网
-Discord Bot 通过 WebSocket Gateway 连接，只需出站网络即可接收消息，无需为 Bot 配置公网入口。
+---
 
-## 架构
+## 快速开始
+
+### 应用市场一键安装（推荐）
+
+在 [OpeniLink Hub](https://github.com/openilink/openilink-hub) 的应用市场中搜索「Discord」，一键安装即可使用，无需自行部署。
+
+<details>
+<summary><strong>自部署（Docker）</strong></summary>
+
+```bash
+docker compose up -d
+```
+
+或手动运行：
+
+```bash
+docker build -t openilink-app-discord .
+docker run -d \
+  -p 8083:8083 \
+  -e HUB_URL="https://your-hub.example.com" \
+  -e BASE_URL="https://your-app.example.com" \
+  -e DISCORD_BOT_TOKEN="your-bot-token" \
+  -e DISCORD_CHANNEL_ID="your-channel-id" \
+  -v app-data:/data \
+  openilink-app-discord
+```
+
+</details>
+
+<details>
+<summary><strong>环境变量</strong></summary>
+
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `HUB_URL` | 是 | - | OpeniLink Hub 地址 |
+| `BASE_URL` | 是 | - | 本应用公网地址（用于 OAuth 回调和 Webhook） |
+| `DISCORD_BOT_TOKEN` | 是 | - | Discord Bot Token |
+| `DISCORD_CHANNEL_ID` | 是 | - | 默认消息转发频道 ID |
+| `DB_PATH` | 否 | `data/discord.db` | SQLite 数据库路径 |
+| `PORT` | 否 | `8083` | HTTP 服务端口 |
+
+</details>
+
+<details>
+<summary><strong>从源码构建</strong></summary>
+
+```bash
+git clone https://github.com/openilink/openilink-app-discord.git && cd openilink-app-discord
+npm install
+cp .env.example .env
+# 编辑 .env 填入你的配置
+
+# 开发模式（热重载）
+npm run dev
+
+# 生产模式
+npm run build
+npm start
+```
+
+</details>
+
+---
+
+<details>
+<summary><strong>Discord Bot 创建配置指南</strong></summary>
+
+### 1. 创建应用
+
+1. 登录 [Discord Developer Portal](https://discord.com/developers/applications)
+2. 点击右上角 **New Application**
+3. 输入应用名称（如 "OpeniLink Bridge"），点击 Create
+
+### 2. 获取 Bot Token
+
+1. 左侧菜单选择 **Bot**
+2. 点击 **Reset Token**，复制并保存 Token
+3. 注意：Token 只会显示一次，请妥善保存
+
+### 3. 配置 Intents
+
+1. 在 Bot 页面下方找到 **Privileged Gateway Intents**
+2. 开启 `SERVER MEMBERS INTENT`
+3. 开启 `MESSAGE CONTENT INTENT`
+4. 点击 **Save Changes**
+
+### 4. 生成邀请链接
+
+1. 左侧菜单选择 **OAuth2 > URL Generator**
+2. Scopes 勾选: `bot`
+3. Bot Permissions 勾选:
+   - `Send Messages`
+   - `Read Message History`
+   - `Manage Messages`
+   - `Embed Links`
+   - `Attach Files`
+   - `Add Reactions`
+   - `Manage Channels`
+   - `Kick Members`
+   - `Ban Members`
+4. 复制底部生成的 URL
+
+### 5. 邀请到服务器
+
+1. 在浏览器中打开复制的 URL
+2. 选择目标服务器，确认授权
+
+### 6. 获取频道 ID
+
+1. 在 Discord 客户端中开启开发者模式（设置 > 高级 > 开发者模式）
+2. 右键点击目标频道，选择「复制频道 ID」
+
+</details>
+
+---
+
+<details>
+<summary><strong>架构与消息流转</strong></summary>
+
+### 架构图
 
 ```mermaid
 graph LR
@@ -72,161 +214,39 @@ graph LR
     end
 ```
 
-**消息流转**：
+### 消息流转
 
 1. **自动桥接（微信 -> Discord）**：Hub Webhook -> handleWebhook -> WxToDiscord -> Discord Embed
 2. **自动桥接（Discord -> 微信）**：Discord Gateway -> registerMessageHandler -> DiscordToWx -> Hub API -> 微信
 3. **自然语言命令**：Hub Webhook (command) -> Router -> Tool Handler -> Discord API -> 结果回复到微信
 4. **AI 工具调用**：Hub 将 AI 选择的工具通过 command 事件发送，Router 分发到对应 handler 执行
 
-## 快速开始
+</details>
 
-### 1. 创建 Discord Application
+---
 
-1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
-2. 点击 **New Application**，填写应用名称
-3. 进入 **Bot** 页面，点击 **Reset Token** 获取 Bot Token（妥善保管）
+<details>
+<summary><strong>开发指南</strong></summary>
 
-### 2. 启用 Gateway Intents
-
-在 Bot 页面，启用以下 Privileged Gateway Intents：
-
-- **SERVER MEMBERS INTENT** -- 获取成员列表
-- **MESSAGE CONTENT INTENT** -- 读取消息内容
-
-### 3. 邀请 Bot 到服务器
-
-1. 进入 **OAuth2 > URL Generator**
-2. 选择 Scopes: `bot`
-3. 选择 Bot Permissions: `Send Messages`, `Read Message History`, `Manage Messages`, `Embed Links`, `Attach Files`, `Add Reactions`, `Manage Channels`, `Kick Members`, `Ban Members`
-4. 复制生成的 URL，在浏览器中打开，选择目标服务器
-
-### 4. 获取频道 ID
-
-1. 在 Discord 中，进入 **用户设置 > 高级 > 开发者模式** 开启
-2. 右键目标频道，选择 **复制频道 ID**
-
-### 5. 配置环境变量
+### 常用命令
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入以下配置
-```
-
-### 6. 启动
-
-**使用 Docker Compose（推荐）**：
-
-```bash
-docker compose up -d
-```
-
-**本地开发**：
-
-```bash
+# 安装依赖
 npm install
+
+# 开发模式
 npm run dev
-```
 
-**编译运行**：
-
-```bash
+# 编译
 npm run build
+
+# 生产运行
 npm start
-```
 
-## 环境变量
-
-| 变量 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `HUB_URL` | 是 | - | OpeniLink Hub 地址 |
-| `BASE_URL` | 是 | - | 本应用公网地址（用于 OAuth 回调和 Webhook） |
-| `DISCORD_BOT_TOKEN` | 是 | - | Discord Bot Token |
-| `DISCORD_CHANNEL_ID` | 是 | - | 默认消息转发频道 ID |
-| `DB_PATH` | 否 | `data/discord.db` | SQLite 数据库路径 |
-| `PORT` | 否 | `8083` | HTTP 服务端口 |
-
-## 使用方式
-
-安装到 Bot 后，支持三种方式调用：
-
-### 自然语言（推荐）
-
-直接用微信跟 Bot 对话，Hub AI 会自动识别意图并调用对应功能：
-
-- "在 Discord 发个消息说服务器维护完成"
-- "查看 Discord 频道成员"
-
-### 命令调用
-
-也可以使用 `/命令名 参数` 的格式直接调用：
-
-- `/send_discord_message --channel_id 123 --text Hello`
-
-### AI 自动调用
-
-Hub AI 在多轮对话中会自动判断是否需要调用本 App 的功能，无需手动触发。
-
-## Discord Bot 创建配置指南
-
-### 详细步骤
-
-1. **创建应用**
-   - 登录 [Discord Developer Portal](https://discord.com/developers/applications)
-   - 点击右上角 **New Application**
-   - 输入应用名称（如 "OpeniLink Bridge"），点击 Create
-
-2. **获取 Bot Token**
-   - 左侧菜单选择 **Bot**
-   - 点击 **Reset Token**，复制并保存 Token
-   - 注意：Token 只会显示一次，请妥善保存
-
-3. **配置 Intents**
-   - 在 Bot 页面下方找到 **Privileged Gateway Intents**
-   - 开启 `SERVER MEMBERS INTENT`
-   - 开启 `MESSAGE CONTENT INTENT`
-   - 点击 **Save Changes**
-
-4. **生成邀请链接**
-   - 左侧菜单选择 **OAuth2 > URL Generator**
-   - Scopes 勾选: `bot`
-   - Bot Permissions 勾选:
-     - `Send Messages`
-     - `Read Message History`
-     - `Manage Messages`
-     - `Embed Links`
-     - `Attach Files`
-     - `Add Reactions`
-     - `Manage Channels`
-     - `Kick Members`
-     - `Ban Members`
-   - 复制底部生成的 URL
-
-5. **邀请到服务器**
-   - 在浏览器中打开复制的 URL
-   - 选择目标服务器，确认授权
-
-6. **获取频道 ID**
-   - 在 Discord 客户端中开启开发者模式（设置 > 高级 > 开发者模式）
-   - 右键点击目标频道，选择「复制频道 ID」
-
-## 开发指南
-
-### 安装依赖
-
-```bash
-npm install
-```
-
-### 运行测试
-
-```bash
+# 运行测试
 npm test
-```
 
-### 监视模式
-
-```bash
+# 监视模式
 npm run test:watch
 ```
 
@@ -260,24 +280,11 @@ src/
     moderation.ts       # 管理操作工具（2 个）
   utils/
     crypto.ts           # 签名验证与 PKCE
-tests/
-  config.test.ts
-  store.test.ts
-  router.test.ts
-  utils/
-    crypto.test.ts
-  hub/
-    webhook.test.ts
-    client.test.ts
-    manifest.test.ts
-  bridge/
-    wx-to-discord.test.ts
-    discord-to-wx.test.ts
-  tools/
-    messaging.test.ts
-    channels.test.ts
-    members.test.ts
 ```
+
+</details>
+
+---
 
 ## 安全与隐私
 
@@ -298,17 +305,7 @@ tests/
 
 ### 自部署（推荐注重隐私的用户）
 
-如果您对数据隐私有更高要求，建议自行部署本 App：
-
-```bash
-# Docker 部署
-docker compose up -d
-
-# 或源码运行
-npm install && npm run build && npm start
-```
-
-自部署后所有数据仅在您自己的服务器上流转，不经过任何第三方。
+如果您对数据隐私有更高要求，建议自行部署本 App。自部署后所有数据仅在您自己的服务器上流转，不经过任何第三方。
 
 ## License
 
