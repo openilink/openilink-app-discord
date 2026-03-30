@@ -19,6 +19,26 @@ import { handleWebhook } from "./hub/webhook.js";
 import { getManifest } from "./hub/manifest.js";
 
 
+/** 按 installation_id 缓存的 per-installation Discord 客户端 */
+const discordClientCache = new Map<string, DiscordClient>();
+
+/** 获取或创建 per-installation 的 Discord 客户端（懒启动） */
+async function getOrCreateDiscordClient(
+  installationId: string,
+  botToken: string,
+  channelId: string,
+  defaultClient: DiscordClient,
+): Promise<DiscordClient> {
+  if (!installationId) return defaultClient;
+  const cached = discordClientCache.get(installationId);
+  if (cached) return cached;
+  const client = new DiscordClient(botToken, channelId);
+  await client.start();
+  discordClientCache.set(installationId, client);
+  console.log(`[Main] 为安装 ${installationId} 创建了独立的 Discord 客户端`);
+  return client;
+}
+
 async function main(): Promise<void> {
   // 1. 加载配置
   const config = loadConfig();
@@ -65,8 +85,22 @@ async function main(): Promise<void> {
         await handleWebhook(req, res, store, {
           // 命令事件 - 路由到 tool handler
           onCommand: async (event, installation) => {
+            // 读取本地加密存储的用户配置，优先于环境变量
+            const userCfg = store.getConfig(installation.id);
+            const botToken = userCfg.discord_bot_token || config.discordBotToken;
+            const channelId = userCfg.discord_channel_id || config.discordChannelId;
+
+            // 如果用户有自定义凭证，使用 per-installation 缓存客户端
+            const instDiscordClient = await getOrCreateDiscordClient(
+              installation.id, botToken, channelId, discordClient,
+            );
+
+            // 用当前安装对应的 Discord Bot 重新收集 tools handlers
+            const { handlers: instHandlers } = collectAllTools(instDiscordClient.bot);
+            const instRouter = new Router(instHandlers);
+
             const hubClient = new HubClient(installation.hubUrl, installation.appToken);
-            return router.handleCommand(event, installation, hubClient);
+            return instRouter.handleCommand(event, installation, hubClient);
           },
           // 非命令事件（消息桥接等）
           onEvent: async (event, installation) => {

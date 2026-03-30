@@ -40,7 +40,7 @@ export function getManifest(
     icon: "🎮",
     description: "微信 ↔ Discord 双向消息桥接",
     events: ["message", "command"],
-    scopes: ["message:read", "message:write", "tools:write"],
+    scopes: ["message:read", "message:write", "tools:write", "config:read"],
     webhook_url: `${config.baseUrl}/hub/webhook`,
     oauth: {
       setup_url: `${config.baseUrl}/oauth/setup`,
