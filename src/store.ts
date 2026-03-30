@@ -106,12 +106,12 @@ export class Store {
     };
   }
 
-  /** 根据 Discord 消息 ID 获取关联记录 */
-  getMessageLinkByDiscordId(discordMessageId: string): MessageLink | undefined {
+  /** 根据 Discord 消息 ID 和安装实例 ID 获取关联记录 */
+  getMessageLinkByDiscordId(discordMessageId: string, installationId: string): MessageLink | undefined {
     const row = this.db.prepare(`
       SELECT id, installation_id, discord_message_id, discord_channel_id, wx_user_id, wx_user_name, created_at
-      FROM message_links WHERE discord_message_id = ?
-    `).get(discordMessageId) as Record<string, unknown> | undefined;
+      FROM message_links WHERE discord_message_id = ? AND installation_id = ?
+    `).get(discordMessageId, installationId) as Record<string, unknown> | undefined;
     return row ? this.rowToMessageLink(row) : undefined;
   }
 

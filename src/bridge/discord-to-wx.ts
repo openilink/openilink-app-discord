@@ -48,14 +48,17 @@ export class DiscordToWx {
       let targetInstallationId: string | undefined;
 
       if (data.reference?.messageId) {
-        // 查找被回复的消息对应的微信用户
-        const link = this.store.getMessageLinkByDiscordId(data.reference.messageId);
-        if (link) {
-          targetWxUserId = link.wxUserId;
-          targetInstallationId = link.installationId;
-          console.log(
-            `[DiscordToWx] 通过回复引用找到目标微信用户: ${link.wxUserName} (${targetWxUserId})`,
-          );
+        // 遍历所有安装实例，查找被回复的消息对应的微信用户
+        for (const inst of installations) {
+          const link = this.store.getMessageLinkByDiscordId(data.reference.messageId, inst.id);
+          if (link) {
+            targetWxUserId = link.wxUserId;
+            targetInstallationId = link.installationId;
+            console.log(
+              `[DiscordToWx] 通过回复引用找到目标微信用户: ${link.wxUserName} (${targetWxUserId})`,
+            );
+            break;
+          }
         }
       }
 
