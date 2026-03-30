@@ -14,7 +14,8 @@ import { Router } from "./router.js";
 import { WxToDiscord } from "./bridge/wx-to-discord.js";
 import { DiscordToWx } from "./bridge/discord-to-wx.js";
 import { HubClient } from "./hub/client.js";
-import { handleOAuthSetup, handleOAuthRedirect, handleOAuthNotify } from "./hub/oauth.js";
+import { handleOAuthSetup, handleOAuthRedirect, handleOAuthNotify, cleanExpired } from "./hub/oauth.js";
+import { handleSettingsPage, handleSettingsVerify, handleSettingsSave } from "./hub/settings.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { getManifest } from "./hub/manifest.js";
 
@@ -27,16 +28,23 @@ async function getOrCreateDiscordClient(
   installationId: string,
   botToken: string,
   channelId: string,
-  defaultClient: DiscordClient,
+  defaultClient: DiscordClient | null,
 ): Promise<DiscordClient> {
-  if (!installationId) return defaultClient;
+  // 如果没有 installationId 且有默认客户端，直接复用
+  if (!installationId && defaultClient) return defaultClient;
   const cached = discordClientCache.get(installationId);
   if (cached) return cached;
-  const client = new DiscordClient(botToken, channelId);
-  await client.start();
-  discordClientCache.set(installationId, client);
-  console.log(`[Main] 为安装 ${installationId} 创建了独立的 Discord 客户端`);
-  return client;
+  // 如果有凭证则创建新客户端并缓存
+  if (botToken) {
+    const client = new DiscordClient(botToken, channelId);
+    await client.start();
+    discordClientCache.set(installationId, client);
+    console.log(`[Main] 为安装 ${installationId} 创建了独立的 Discord 客户端`);
+    return client;
+  }
+  // 兜底：使用默认客户端
+  if (defaultClient) return defaultClient;
+  throw new Error(`[Main] 安装 ${installationId} 缺少 Discord 凭证且无默认客户端`);
 }
 
 async function main(): Promise<void> {
@@ -46,33 +54,48 @@ async function main(): Promise<void> {
   // 2. 初始化 SQLite 存储
   const store = new Store(config.dbPath);
 
-  // 3. 初始化 Discord 客户端
-  const discordClient = new DiscordClient(config.discordBotToken, config.discordChannelId);
+  // 3. 初始化 Discord 客户端（如果环境变量中配置了 Discord 凭证）
+  const hasDiscordCredentials = !!config.discordBotToken;
+  let discordClient: DiscordClient | null = null;
+  if (hasDiscordCredentials) {
+    discordClient = new DiscordClient(config.discordBotToken, config.discordChannelId);
+    // 4. 连接 Discord Gateway
+    await discordClient.start();
+    console.log("[Main] Discord 客户端初始化完成");
+  } else {
+    console.log("[Main] 未配置 Discord 凭证，跳过默认 Discord 客户端初始化（云端托管模式，用户安装时填写）");
+  }
 
-  // 4. 连接 Discord Gateway
-  await discordClient.start();
-
-  // 5. 收集所有工具定义和处理器
+  // 5. 收集所有工具定义和处理器（需要一个 Bot 实例来获取定义，如果没有默认客户端则用空凭证的客户端仅收集定义）
+  const toolsSdkClient = discordClient ?? new DiscordClient("", "");
   const { definitions: toolDefinitions, handlers: toolHandlers } =
-    collectAllTools(discordClient.bot);
+    collectAllTools(toolsSdkClient.bot);
   console.log(`[Main] 已加载 ${toolDefinitions.length} 个工具`);
 
   // 6. 初始化命令路由器
   const router = new Router(toolHandlers);
 
-  // 7. 初始化消息桥接
-  const wxToDiscord = new WxToDiscord(discordClient, store, config.discordChannelId);
-  const discordToWx = new DiscordToWx(store, config.discordChannelId);
+  // 7. 初始化消息桥接（如果有默认 Discord 客户端才启用）
+  const wxToDiscord = discordClient ? new WxToDiscord(discordClient, store, config.discordChannelId) : null;
+  const discordToWx = discordClient ? new DiscordToWx(store, config.discordChannelId) : null;
 
-  // 8. 注册 Discord 消息监听（Discord → 微信方向）
-  registerMessageHandler(discordClient.bot, async (data) => {
-    try {
-      const installations = store.getAllInstallations();
-      await discordToWx.handleDiscordMessage(data, installations);
-    } catch (err) {
-      console.error("[Main] Discord → 微信消息处理失败:", err);
-    }
-  });
+  // 8. 注册 Discord 消息监听（Discord → 微信方向，仅在有默认客户端时启用）
+  if (discordClient && discordToWx) {
+    const _discordToWx = discordToWx;
+    registerMessageHandler(discordClient.bot, async (data) => {
+      try {
+        const installations = store.getAllInstallations();
+        await _discordToWx.handleDiscordMessage(data, installations);
+      } catch (err) {
+        console.error("[Main] Discord → 微信消息处理失败:", err);
+      }
+    });
+  } else {
+    console.log("[Main] 未配置 Discord 凭证，跳过消息监听注册");
+  }
+
+  // 定期清理过期的 PKCE 缓存
+  const cleanupTimer = setInterval(cleanExpired, 60_000);
 
   // 9. 创建 HTTP 服务
   const server: Server = createServer(async (req, res) => {
@@ -104,7 +127,9 @@ async function main(): Promise<void> {
           },
           // 非命令事件（消息桥接等）
           onEvent: async (event, installation) => {
-            await wxToDiscord.handleWxEvent(event, installation);
+            if (wxToDiscord) {
+              await wxToDiscord.handleWxEvent(event, installation);
+            }
           },
           // 异步推送回调 - 命令超时后通过 Bot API 推送结果
           onAsyncPush: async (result, event, installation) => {
@@ -132,9 +157,9 @@ async function main(): Promise<void> {
         return;
       }
 
-      // OAuth 安装流程
-      if (pathname === "/oauth/setup" && req.method === "GET") {
-        handleOAuthSetup(req, res, config);
+      // GET/POST /oauth/setup - OAuth 安装流程（显示配置表单 / 提交后跳转授权）
+      if (pathname === "/oauth/setup" && (req.method === "GET" || req.method === "POST")) {
+        await handleOAuthSetup(req, res, config);
         return;
       }
 
@@ -156,6 +181,24 @@ async function main(): Promise<void> {
         const manifest = getManifest(config, toolDefinitions);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(manifest, null, 2));
+        return;
+      }
+
+      // GET /settings — 设置页面（输入 token 验证身份）
+      if (req.method === "GET" && pathname === "/settings") {
+        handleSettingsPage(req, res);
+        return;
+      }
+
+      // POST /settings/verify — 验证 token 后显示配置表单
+      if (req.method === "POST" && pathname === "/settings/verify") {
+        await handleSettingsVerify(req, res, config, store);
+        return;
+      }
+
+      // POST /settings/save — 保存修改后的配置
+      if (req.method === "POST" && pathname === "/settings/save") {
+        await handleSettingsSave(req, res, config, store);
         return;
       }
 
@@ -181,9 +224,12 @@ async function main(): Promise<void> {
   // 10. 优雅退出
   function shutdown(): void {
     console.log("[Server] 正在关闭...");
-    discordClient.stop().catch((err) => {
-      console.error("[Server] 停止 Discord Bot 失败:", err);
-    });
+    clearInterval(cleanupTimer);
+    if (discordClient) {
+      discordClient.stop().catch((err) => {
+        console.error("[Server] 停止 Discord Bot 失败:", err);
+      });
+    }
     store.close();
     server.close(() => {
       console.log("[Server] 已关闭");

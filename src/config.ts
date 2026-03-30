@@ -1,5 +1,7 @@
 /**
  * 应用配置接口与加载逻辑
+ * 注意：discordBotToken / discordChannelId 在云端托管模式下为可选，
+ * 用户会在 OAuth setup 页面自行填写并加密存储到本地数据库。
  */
 
 export interface Config {
@@ -11,9 +13,9 @@ export interface Config {
   baseUrl: string;
   /** SQLite 数据库路径，默认 "data/discord.db" */
   dbPath: string;
-  /** Discord Bot Token，必填 */
+  /** Discord Bot Token（可选，云端托管模式下由用户在安装时填写） */
   discordBotToken: string;
-  /** 默认转发到的 Discord 频道 ID */
+  /** 默认转发到的 Discord 频道 ID（可选） */
   discordChannelId: string;
 }
 
@@ -21,23 +23,23 @@ export interface Config {
  * 从环境变量加载配置，校验必填项
  */
 export function loadConfig(): Config {
-  const port = process.env.PORT ?? "8083";
-  const hubUrl = process.env.HUB_URL ?? "";
-  const baseUrl = process.env.BASE_URL ?? "";
-  const dbPath = process.env.DB_PATH ?? "data/discord.db";
-  const discordBotToken = process.env.DISCORD_BOT_TOKEN ?? "";
-  const discordChannelId = process.env.DISCORD_CHANNEL_ID ?? "";
+  const cfg: Config = {
+    port: process.env.PORT ?? "8083",
+    hubUrl: process.env.HUB_URL ?? "",
+    baseUrl: process.env.BASE_URL ?? "",
+    dbPath: process.env.DB_PATH ?? "data/discord.db",
+    discordBotToken: process.env.DISCORD_BOT_TOKEN ?? "",
+    discordChannelId: process.env.DISCORD_CHANNEL_ID ?? "",
+  };
 
-  // 校验必填项
+  // 只有 HUB_URL 和 BASE_URL 是必填，Discord 凭证在云端托管模式下由用户安装时填写
   const missing: string[] = [];
-  if (!hubUrl) missing.push("HUB_URL");
-  if (!baseUrl) missing.push("BASE_URL");
-  if (!discordBotToken) missing.push("DISCORD_BOT_TOKEN");
-  if (!discordChannelId) missing.push("DISCORD_CHANNEL_ID");
+  if (!cfg.hubUrl) missing.push("HUB_URL");
+  if (!cfg.baseUrl) missing.push("BASE_URL");
 
   if (missing.length > 0) {
     throw new Error(`缺少必填环境变量: ${missing.join(", ")}`);
   }
 
-  return { port, hubUrl, baseUrl, dbPath, discordBotToken, discordChannelId };
+  return cfg;
 }
